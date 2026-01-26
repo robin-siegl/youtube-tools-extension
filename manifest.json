@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Tools",
+  "version": "1.0",
+  "description": "YouTube Tools to improve using the site.",
+  "permissions": ["scripting", "activeTab"],
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "48": "icon.png"
+  }
+}
