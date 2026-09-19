@@ -1,17 +1,26 @@
 {
   "manifest_version": 3,
   "name": "YouTube Tools",
-  "version": "1.0",
-  "description": "YouTube Tools to improve using the site.",
-  "permissions": ["scripting", "activeTab"],
+  "version": "1.1",
+  "description": "Quick YouTube recommendation controls that stay reliable across normal and client-side navigation.",
   "content_scripts": [
     {
-      "matches": ["*://www.youtube.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "*://www.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
   "icons": {
-    "48": "icon.png"
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
 }

@@ -1,280 +1,627 @@
 (() => {
   'use strict';
 
-  // ---------------------------
-  // Styling helpers
-  // ---------------------------
-  function createStyledButton({ id, label, position, onClick }) {
-    if (id && document.getElementById(id)) return null;
+  const EXTENSION_PREFIX = 'ytfc';
 
-    const btn = document.createElement('button');
-    if (id) btn.id = id;
-    btn.textContent = label;
+  const CARD_SELECTOR = [
+    'ytd-rich-item-renderer',
+    'ytd-video-renderer',
+    'ytd-grid-video-renderer',
+    'ytd-compact-video-renderer',
+  ].join(',');
 
-    Object.assign(btn.style, {
-      position,
-      bottom: '24px',
-      right: id?.includes('dont') ? '24px' : '84px',
-      zIndex: '99999',
-      padding: '10px 16px',
-      border: 'none',
-      borderRadius: '8px',
-      backgroundColor: '#1a73e8',
-      color: '#fff',
-      fontSize: '14px',
-      fontWeight: '500',
-      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
-      cursor: 'pointer',
-      fontFamily: 'Roboto, sans-serif',
-      transition: 'background-color 0.2s ease',
-    });
+  const LOCKUP_SELECTOR = 'yt-lockup-view-model';
 
-    btn.onmouseenter = () => {
-      btn.style.backgroundColor = '#1669c1';
-    };
-    btn.onmouseleave = () => {
-      btn.style.backgroundColor = '#1a73e8';
-    };
-    btn.onclick = onClick;
+  const MENU_ITEM_SELECTOR = [
+    'yt-list-item-view-model',
+    'ytd-menu-service-item-renderer',
+    'ytd-menu-navigation-item-renderer',
+    'tp-yt-paper-item[role="menuitem"]',
+    '[role="menuitem"]',
+  ].join(',');
 
-    document.body.appendChild(btn);
-    return btn;
+  const ACTIONS = {
+    notInterested: {
+      label: 'Not interested',
+      iconName: 'HIDE',
+      textMatchers: [
+        /^not interested$/i,
+        /^nicht interessiert$/i,
+        /^kein interesse$/i,
+      ],
+      iconPath:
+        'M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05A2.01 2.01 0 0 0 3 14h5.63l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.17 21 16 14.17V5c0-1.1-.9-2-2-2h-1Zm-1 10.34-4.34 4.34L10.89 12H3l3-7h8v8.34ZM18 3h4v12h-4V3Z',
+    },
+    dontRecommend: {
+      label: "Don't recommend channel",
+      iconName: 'REMOVE',
+      textMatchers: [
+        /^don't recommend channel$/i,
+        /^do not recommend channel$/i,
+        /^kanal nicht empfehlen$/i,
+        /^diesen kanal nicht empfehlen$/i,
+        /^diesen kanal nicht mehr empfehlen$/i,
+        /^keine videos von diesem kanal$/i,
+      ],
+      iconPath:
+        'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 2c1.85 0 3.55.63 4.9 1.69L5.69 16.9A7.95 7.95 0 0 1 4 12c0-4.41 3.59-8 8-8Zm0 16a7.95 7.95 0 0 1-4.9-1.69L18.31 7.1A7.95 7.95 0 0 1 20 12c0 4.41-3.59 8-8 8Z',
+    },
+  };
+
+  const controlsByCard = new Map();
+
+  let scanTimer = null;
+  let positionFrame = null;
+  let navigating = false;
+  let actionInProgress = false;
+  let mutationObserver = null;
+  let resizeObserver = null;
+  let overlayLayer = null;
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  function normalizeText(value) {
+    return String(value || '')
+      .replace(/[’‘`]/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
-  function createOverlayWrapper() {
-    const wrapper = document.createElement('div');
-    Object.assign(wrapper.style, {
-      position: 'absolute',
-      top: '8px',
-      right: '8px',
-      zIndex: '9999',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '6px',
-      pointerEvents: 'auto',
-    });
-    return wrapper;
+  function isVisible(element) {
+    if (!(element instanceof Element) || !element.isConnected) return false;
+
+    const style = getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    if (element.getAttribute('aria-hidden') === 'true') return false;
+
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   }
 
-  function createQuickButton(label) {
-    const btn = document.createElement('button');
-    btn.textContent = label;
-    Object.assign(btn.style, {
-      padding: '8px 12px',
-      border: 'none',
-      borderRadius: '6px',
-      backgroundColor: '#f1f3f4',
-      color: '#202124',
-      fontSize: '13px',
-      fontWeight: '500',
-      boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-      cursor: 'pointer',
-      transition: 'background-color 0.2s ease',
-      fontFamily: 'Roboto, sans-serif',
-    });
-    btn.onmouseenter = () => {
-      btn.style.backgroundColor = '#e0e0e0';
-    };
-    btn.onmouseleave = () => {
-      btn.style.backgroundColor = '#f1f3f4';
-    };
-    return btn;
+  function stopCardInteraction(event) {
+    event.stopPropagation();
   }
 
-  // ---------------------------
-  // YouTube DOM helpers
-  // ---------------------------
-  function findVideoCards() {
-    // Your snippet shows ytd-rich-item-renderer. We'll keep it targeted + add a couple safe fallbacks.
-    return document.querySelectorAll(
-      [
-        'ytd-rich-item-renderer',
-        'ytd-rich-grid-media',
-        'ytd-video-renderer',
-      ].join(',')
-    );
+  function createIcon(pathData) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.classList.add(`${EXTENSION_PREFIX}-action__icon`);
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', pathData);
+    svg.appendChild(path);
+
+    return svg;
+  }
+
+  function ensureOverlayLayer() {
+    if (overlayLayer?.isConnected) return overlayLayer;
+
+    overlayLayer = document.createElement('div');
+    overlayLayer.id = `${EXTENSION_PREFIX}-overlay-layer`;
+    overlayLayer.className = `${EXTENSION_PREFIX}-overlay-layer`;
+    overlayLayer.setAttribute('aria-hidden', 'false');
+    document.body.appendChild(overlayLayer);
+
+    return overlayLayer;
+  }
+
+  function showToast(message) {
+    let toast = document.getElementById(`${EXTENSION_PREFIX}-toast`);
+
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = `${EXTENSION_PREFIX}-toast`;
+      toast.className = `${EXTENSION_PREFIX}-toast`;
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+      document.body.appendChild(toast);
+    }
+
+    toast.textContent = message;
+    toast.classList.remove(`${EXTENSION_PREFIX}-toast--visible`);
+    void toast.offsetWidth;
+    toast.classList.add(`${EXTENSION_PREFIX}-toast--visible`);
+
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => {
+      toast?.classList.remove(`${EXTENSION_PREFIX}-toast--visible`);
+    }, 2800);
   }
 
   function findMenuButton(card) {
-    // Based on your snippet: .yt-lockup-metadata-view-model__menu-button button[aria-label="More actions"]
-    return (
-      card.querySelector('.yt-lockup-metadata-view-model__menu-button button[aria-label="More actions"]') ||
-      card.querySelector('button[aria-label="More actions"]') ||
-      // older fallbacks
-      card.querySelector('ytd-menu-renderer tp-yt-paper-icon-button#button') ||
-      card.querySelector('#menu button')
+    const selectors = [
+      '.ytLockupMetadataViewModelMenuButton button',
+      '.yt-lockup-metadata-view-model__menu-button button',
+      'ytd-menu-renderer tp-yt-paper-icon-button#button',
+      'ytd-menu-renderer yt-icon-button#button',
+      '#menu tp-yt-paper-icon-button#button',
+      '#menu yt-icon-button#button',
+      '#menu button[aria-label="More actions"]',
+      '#menu button[aria-label="Aktionen"]',
+      'button[aria-label="More actions"]',
+      'button[aria-label="Aktionen"]',
+    ];
+
+    for (const selector of selectors) {
+      const element = card.querySelector(selector);
+      if (element) return element;
+    }
+
+    return null;
+  }
+
+  function findThumbnailTarget(card) {
+    const selectors = [
+      '.ytLockupViewModelContentImage',
+      'a#thumbnail',
+      'ytd-thumbnail',
+      '#thumbnail',
+      'yt-thumbnail-view-model',
+    ];
+
+    for (const selector of selectors) {
+      const element = card.querySelector(selector);
+      if (!(element instanceof Element)) continue;
+
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 40 && rect.height > 40) return element;
+    }
+
+    return card;
+  }
+
+  function getCards() {
+    const cards = new Set(document.querySelectorAll(CARD_SELECTOR));
+
+    // YouTube is gradually moving more surfaces to view-model lockups. Support
+    // those too, but only when there is no traditional renderer around them.
+    document.querySelectorAll(LOCKUP_SELECTOR).forEach((lockup) => {
+      if (!lockup.closest(CARD_SELECTOR)) cards.add(lockup);
+    });
+
+    return cards;
+  }
+
+  function getMenuItemText(element) {
+    const preferredText = element.querySelector?.(
+      [
+        '.yt-list-item-view-model__title',
+        '.ytListItemViewModelTitle',
+        'yt-formatted-string',
+        '[role="menuitem"]',
+      ].join(',')
+    );
+
+    return normalizeText(preferredText?.textContent || element.textContent);
+  }
+
+  function getViewModelCandidates(element) {
+    return [
+      element.data,
+      element.data?.listItemViewModel,
+      element.__data?.data,
+      element.__data?.listItemViewModel,
+      element.__data?.viewModel,
+      element.__dataHost?.data,
+    ].filter(Boolean);
+  }
+
+  function getSemanticAction(element) {
+    for (const candidate of getViewModelCandidates(element)) {
+      const viewModel = candidate.listItemViewModel || candidate;
+      const iconName = viewModel?.leadingImage?.sources?.find(
+        (source) => source?.clientResource?.imageName
+      )?.clientResource?.imageName;
+
+      const command =
+        viewModel?.rendererContext?.commandContext?.onTap?.innertubeCommand;
+
+      // Both recommendation controls use YouTube's feedback endpoint. Requiring
+      // it avoids confusing generic REMOVE/HIDE menu items with these actions.
+      if (!command?.feedbackEndpoint) continue;
+
+      if (iconName === ACTIONS.notInterested.iconName) return 'notInterested';
+      if (iconName === ACTIONS.dontRecommend.iconName) return 'dontRecommend';
+    }
+
+    return null;
+  }
+
+  function menuItemMatchesAction(element, actionKey) {
+    const action = ACTIONS[actionKey];
+    if (!action) return false;
+
+    if (getSemanticAction(element) === actionKey) return true;
+
+    const text = getMenuItemText(element);
+    return action.textMatchers.some((matcher) => matcher.test(text));
+  }
+
+  function getVisibleMenuItems() {
+    return [...document.querySelectorAll(MENU_ITEM_SELECTOR)].filter(isVisible);
+  }
+
+  function findVisibleActionItem(actionKey) {
+    return getVisibleMenuItems().find((item) =>
+      menuItemMatchesAction(item, actionKey)
     );
   }
 
-  function getMenuItems() {
-    // New UI in your dropdown snippet
-    const vmItems = [
-      ...document.querySelectorAll(
-        'tp-yt-iron-dropdown yt-list-item-view-model[role="menuitem"]'
-      ),
-    ];
-    if (vmItems.length) return vmItems;
-
-    // Older UI fallback
-    return [...document.querySelectorAll('ytd-menu-service-item-renderer')];
+  function getClickableMenuTarget(item) {
+    return (
+      item.querySelector?.(
+        [
+          '.yt-list-item-view-model__container--tappable',
+          '.ytListItemViewModelContainer',
+          '[role="menuitem"]',
+          'button',
+          'a',
+        ].join(',')
+      ) || item
+    );
   }
 
-  function getMenuItemLabel(el) {
-    const title = el.querySelector?.('.yt-list-item-view-model__title');
-    if (title?.textContent) return title.textContent.trim();
-    return (el.textContent || '').trim();
+  function dispatchRealClick(element) {
+    if (!(element instanceof Element)) return;
+
+    element.focus?.({ preventScroll: true });
+
+    const pointerOptions = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      button: 0,
+      buttons: 1,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+      view: window,
+    };
+
+    const mouseOptions = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      button: 0,
+      buttons: 1,
+      view: window,
+    };
+
+    try {
+      element.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
+      element.dispatchEvent(new MouseEvent('mousedown', mouseOptions));
+      element.dispatchEvent(
+        new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 })
+      );
+      element.dispatchEvent(
+        new MouseEvent('mouseup', { ...mouseOptions, buttons: 0 })
+      );
+      element.dispatchEvent(
+        new MouseEvent('click', { ...mouseOptions, buttons: 0 })
+      );
+    } catch {
+      element.click?.();
+    }
   }
 
-  function dispatchRealClick(el) {
-    // Some of YouTube's handlers don't respond to .click() reliably; this usually does.
-    el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  function dispatchEscape() {
+    const target = document.activeElement || document.body;
+    const options = {
+      key: 'Escape',
+      code: 'Escape',
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    };
+
+    target?.dispatchEvent(new KeyboardEvent('keydown', options));
+    target?.dispatchEvent(new KeyboardEvent('keyup', options));
   }
 
-  function waitForMenuItems({ timeout = 1500, interval = 50 } = {}) {
+  async function waitForActionItem(actionKey, timeout = 2200) {
+    const existing = findVisibleActionItem(actionKey);
+    if (existing) return existing;
+
     return new Promise((resolve) => {
-      const start = Date.now();
-      const t = setInterval(() => {
-        const items = getMenuItems();
-        if (items.length) {
-          clearInterval(t);
-          resolve(items);
-          return;
-        }
-        if (Date.now() - start > timeout) {
-          clearInterval(t);
-          resolve([]);
-        }
-      }, interval);
+      let settled = false;
+
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        observer.disconnect();
+        clearTimeout(timeoutId);
+        resolve(value);
+      };
+
+      const check = () => {
+        const item = findVisibleActionItem(actionKey);
+        if (item) finish(item);
+      };
+
+      const observer = new MutationObserver(check);
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'hidden', 'aria-hidden'],
+      });
+
+      const timeoutId = setTimeout(() => finish(null), timeout);
+      check();
     });
   }
 
-  async function clickMenuAction(menuBtn, matchTextOrRegex) {
-    if (!menuBtn) return false;
+  async function runRecommendationAction(card, actionKey) {
+    const action = ACTIONS[actionKey];
+    if (!action || actionInProgress || !card?.isConnected) return false;
 
-    // open menu
-    menuBtn.click();
+    actionInProgress = true;
 
-    const items = await waitForMenuItems();
-    if (!items.length) return false;
-
-    const matcher =
-      matchTextOrRegex instanceof RegExp
-        ? (t) => matchTextOrRegex.test(t)
-        : (t) => t.toLowerCase().includes(String(matchTextOrRegex).toLowerCase());
-
-    const target = items.find((el) => matcher(getMenuItemLabel(el)));
-    if (!target) return false;
-
-    // Click the "tappable" container if present (often the real click target)
-    const clickable =
-      target.querySelector?.('.yt-list-item-view-model__container--tappable') || target;
-
-    clickable.focus?.();
-    dispatchRealClick(clickable);
-    return true;
-  }
-
-  // ---------------------------
-  // Per-card overlay buttons
-  // ---------------------------
-  function addButtons() {
-    findVideoCards().forEach((card) => {
-      if (card.hasAttribute('data-buttons-added')) return;
-
-      const menuBtn = findMenuButton(card);
-      if (!menuBtn) return;
-
-      const wrapper = createOverlayWrapper();
-
-      // English + German matching (safe even if you're on English)
-      const notInterestedRegex = /not interested|nicht interessiert|kein interesse/i;
-      const dontRecommendRegex =
-        /don't recommend channel|kanal nicht empfehlen|nicht.*kanal.*empfehlen|keine videos von diesem kanal/i;
-
-      const btn1 = createQuickButton('👎');
-      btn1.onclick = async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        await clickMenuAction(menuBtn, notInterestedRegex);
-      };
-
-      const btn2 = createQuickButton('🚫');
-      btn2.onclick = async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        await clickMenuAction(menuBtn, dontRecommendRegex);
-      };
-
-      wrapper.appendChild(btn1);
-      wrapper.appendChild(btn2);
-
-      const anchor = card.querySelector('#content') || card;
-      if (getComputedStyle(anchor).position === 'static') {
-        anchor.style.position = 'relative';
+    try {
+      // If a context menu is already open, close it first so we never select a
+      // stale item from a different video.
+      if (getVisibleMenuItems().length) {
+        dispatchEscape();
+        await sleep(70);
       }
 
-      anchor.appendChild(wrapper);
-      card.setAttribute('data-buttons-added', 'true');
-    });
+      const menuButton = findMenuButton(card);
+      if (!menuButton?.isConnected) {
+        showToast('YouTube changed this video menu before the action could run.');
+        return false;
+      }
+
+      dispatchRealClick(menuButton);
+
+      const item = await waitForActionItem(actionKey);
+      if (!item) {
+        if (menuButton.isConnected) dispatchRealClick(menuButton);
+        showToast(`Could not find “${action.label}” in this YouTube menu.`);
+        return false;
+      }
+
+      const clickable = getClickableMenuTarget(item);
+      dispatchRealClick(clickable);
+      return true;
+    } finally {
+      actionInProgress = false;
+    }
   }
 
-  // ---------------------------
-  // Global action buttons
-  // ---------------------------
-  function createGlobalActionButton(id, label, matchRegex) {
-    createStyledButton({
-      id,
-      label,
-      position: 'fixed',
-      onClick: async () => {
-        const cards = [...findVideoCards()];
+  function createActionButton(card, actionKey) {
+    const action = ACTIONS[actionKey];
+    const button = document.createElement('button');
 
-        for (let i = 0; i < cards.length; i++) {
-          const card = cards[i];
-          const menuBtn = findMenuButton(card);
-          if (!menuBtn) continue;
+    button.type = 'button';
+    button.className = `${EXTENSION_PREFIX}-action`;
+    button.dataset.action = actionKey;
+    button.setAttribute('aria-label', action.label);
+    button.setAttribute('title', action.label);
+    button.appendChild(createIcon(action.iconPath));
 
-          // slight delay between items to avoid UI race conditions
-          // (and to let menus open/close properly)
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((r) => setTimeout(r, 250));
+    button.addEventListener('pointerdown', stopCardInteraction);
+    button.addEventListener('mousedown', stopCardInteraction);
+    button.addEventListener('mouseup', stopCardInteraction);
 
-          // eslint-disable-next-line no-await-in-loop
-          await clickMenuAction(menuBtn, matchRegex);
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
 
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((r) => setTimeout(r, 250));
+      if (button.getAttribute('aria-busy') === 'true') return;
+
+      button.setAttribute('aria-busy', 'true');
+      button.disabled = true;
+
+      try {
+        await runRecommendationAction(card, actionKey);
+      } finally {
+        if (button.isConnected) {
+          button.removeAttribute('aria-busy');
+          button.disabled = false;
         }
-      },
+      }
+    });
+
+    return button;
+  }
+
+  function createActionGroup(card) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `${EXTENSION_PREFIX}-actions`;
+    wrapper.setAttribute('data-ytfc-controls', 'true');
+    wrapper.setAttribute('aria-label', 'Recommendation controls');
+
+    wrapper.appendChild(createActionButton(card, 'notInterested'));
+    wrapper.appendChild(createActionButton(card, 'dontRecommend'));
+
+    return wrapper;
+  }
+
+  function positionControlsForCard(card, controls) {
+    if (!card?.isConnected || !controls?.isConnected) return;
+
+    const target = findThumbnailTarget(card);
+    const rect = target.getBoundingClientRect();
+
+    const outsideViewport =
+      rect.width <= 0 ||
+      rect.height <= 0 ||
+      rect.bottom <= 0 ||
+      rect.right <= 0 ||
+      rect.top >= window.innerHeight ||
+      rect.left >= window.innerWidth;
+
+    if (outsideViewport) {
+      controls.hidden = true;
+      return;
+    }
+
+    controls.hidden = false;
+    controls.style.left = `${Math.round(rect.left + 8)}px`;
+    controls.style.top = `${Math.round(rect.top + 8)}px`;
+  }
+
+  function positionAllControls() {
+    positionFrame = null;
+
+    for (const [card, controls] of controlsByCard) {
+      if (!card.isConnected || !controls.isConnected) continue;
+      positionControlsForCard(card, controls);
+    }
+  }
+
+  function schedulePosition() {
+    if (positionFrame !== null) return;
+    positionFrame = requestAnimationFrame(positionAllControls);
+  }
+
+  function enhanceCard(card) {
+    if (!(card instanceof Element) || !card.isConnected) return;
+
+    const existing = controlsByCard.get(card);
+    if (existing?.isConnected) {
+      positionControlsForCard(card, existing);
+      return;
+    }
+
+    // Don't create controls until the card has its own YouTube menu. This also
+    // filters out view-models that are not recommendation video cards.
+    if (!findMenuButton(card)) return;
+
+    const layer = ensureOverlayLayer();
+    const controls = createActionGroup(card);
+
+    layer.appendChild(controls);
+    controlsByCard.set(card, controls);
+    resizeObserver?.observe(card);
+    positionControlsForCard(card, controls);
+  }
+
+  function cleanupControls() {
+    for (const [card, controls] of controlsByCard) {
+      if (card.isConnected && controls.isConnected) continue;
+
+      resizeObserver?.unobserve(card);
+      controls.remove();
+      controlsByCard.delete(card);
+    }
+  }
+
+  function scan() {
+    scanTimer = null;
+    if (navigating || !document.body) return;
+
+    cleanupControls();
+    ensureOverlayLayer();
+    getCards().forEach(enhanceCard);
+    schedulePosition();
+  }
+
+  function scheduleScan(delay = 70) {
+    if (navigating || scanTimer !== null) return;
+    scanTimer = window.setTimeout(scan, delay);
+  }
+
+  function removeInjectedControls() {
+    for (const [card, controls] of controlsByCard) {
+      resizeObserver?.unobserve(card);
+      controls.remove();
+    }
+
+    controlsByCard.clear();
+    overlayLayer?.remove();
+    overlayLayer = null;
+  }
+
+  function onNavigationStart() {
+    navigating = true;
+
+    if (scanTimer !== null) {
+      clearTimeout(scanTimer);
+      scanTimer = null;
+    }
+
+    if (positionFrame !== null) {
+      cancelAnimationFrame(positionFrame);
+      positionFrame = null;
+    }
+
+    removeInjectedControls();
+  }
+
+  function onNavigationFinished() {
+    navigating = false;
+    scheduleScan(0);
+
+    // YouTube can complete the route before every lockup/menu has been stamped.
+    setTimeout(() => scheduleScan(0), 250);
+    setTimeout(() => scheduleScan(0), 900);
+  }
+
+  function observePage() {
+    mutationObserver?.disconnect();
+
+    mutationObserver = new MutationObserver((mutations) => {
+      if (navigating) return;
+
+      let needsScan = false;
+
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') {
+          // Inline preview is rendered in YouTube's global #video-preview node,
+          // outside the card itself. Our controls live in a separate body-level
+          // portal, so that preview can no longer cover or delete them.
+          if (mutation.addedNodes.length || mutation.removedNodes.length) {
+            needsScan = true;
+            break;
+          }
+        }
+      }
+
+      if (needsScan) scheduleScan(50);
+      schedulePosition();
+    });
+
+    mutationObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
     });
   }
 
-  // ---------------------------
-  // Boot
-  // ---------------------------
   function boot() {
-    addButtons();
+    resizeObserver = new ResizeObserver(() => schedulePosition());
+    observePage();
 
-    // Global buttons
-    createGlobalActionButton(
-      'yt-tools-notInterested-all',
-      '👎',
-      /not interested|nicht interessiert|kein interesse/i
+    document.addEventListener('yt-navigate-start', onNavigationStart, true);
+    document.addEventListener('yt-navigate-finish', onNavigationFinished, true);
+    document.addEventListener('yt-page-data-updated', onNavigationFinished, true);
+    document.addEventListener(
+      'yt-rendererstamper-finished',
+      () => scheduleScan(),
+      true
     );
 
-    createGlobalActionButton(
-      'yt-tools-dontRecommend-all',
-      '🚫',
-      /don't recommend channel|kanal nicht empfehlen|nicht.*kanal.*empfehlen|keine videos von diesem kanal/i
-    );
+    // Capture scroll from YouTube's internal scrolling containers as well as
+    // the window. Fixed portal controls are then kept glued to their thumbnail.
+    document.addEventListener('scroll', schedulePosition, true);
+    window.addEventListener('resize', schedulePosition, { passive: true });
+    window.addEventListener('popstate', () => scheduleScan(0), true);
+    window.addEventListener('pageshow', () => scheduleScan(0), true);
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) scheduleScan(0);
+    });
+
+    scheduleScan(0);
   }
 
-  const observer = new MutationObserver(boot);
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  boot();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
 })();

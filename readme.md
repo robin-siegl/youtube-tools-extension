@@ -1,46 +1,37 @@
 # YouTube Feed Control – Chrome Extension
 
-This Chrome extension enhances the YouTube homepage by adding quick-action controls that make it easier to manage recommendations.
+A small Chrome extension that adds quick recommendation controls directly to YouTube video cards.
 
 ## Features
 
-### Inline quick buttons on thumbnails
+### Per-video quick controls
 
-Adds two small buttons directly on each video in the YouTube home feed:
+Hover a supported YouTube video card to reveal two compact controls:
 
-- 👎 Not interested
-- 🚫 Don’t recommend channel
+- **Not interested**
+- **Don't recommend channel**
 
-These buttons trigger YouTube’s existing menu actions automatically.
+The controls use YouTube's own menu actions rather than calling private APIs directly.
 
-### Global action buttons
+### Current YouTube DOM support
 
-Adds fixed-position buttons to the page that apply actions to all visible videos:
+The extension supports YouTube's newer `yt-lockup-view-model` / `ytLockup...` markup as well as older renderer fallbacks.
 
-- 👎 Mark all videos as Not interested
-- 🚫 Mark all channels as Don’t recommend
-
-Actions are triggered sequentially with delays to avoid UI issues.
-
-## How It Works (High Level)
-
-1. Detects video tiles (ytd-rich-item-renderer)
-2. Injects custom buttons into each thumbnail
-3. Simulates clicks on YouTube’s context menu options
-4. Observes DOM changes to handle dynamically loaded content
+Recommendation menu actions are matched using YouTube view-model metadata when available, with English and German menu-label fallbacks.
 
 ## Permissions & Privacy
 
-- Runs only on YouTube pages
+- Runs only on `www.youtube.com`
+- No extension permissions are requested beyond the declared YouTube content-script match
 - Does not store or transmit user data
 - No tracking or analytics
+
 ## Installation
-Pre Condition: Remove ad block related modal with ad blocker element filter.
 
-1. Clone or download this repository
-2. Open Chrome and go to chrome://extensions
-3. Enable Developer mode
-4. Click Load unpacked
-5. Select the project folder
+1. Download or clone the extension folder.
+2. Open `chrome://extensions` in Chrome.
+3. Enable **Developer mode**.
+4. Click **Load unpacked**.
+5. Select this extension folder.
 
-That’s it.
+When updating an already loaded unpacked copy, replace the old files and click **Reload** on the extension card in `chrome://extensions`.
