@@ -41,14 +41,10 @@ export class RatingService {
     const existing = this.inFlight.get(videoId);
     if (existing) return existing;
 
-    const pending = this.enqueue(videoId)
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.message !== 'RATE_LIMITED') {
-          console.warn('[YouTube Tools] Rating lookup failed.', videoId, error);
-        }
-        return null;
-      })
-      .finally(() => this.inFlight.delete(videoId));
+    // Do not swallow network/rate-limit errors here. The background message
+    // handler turns them into an explicit RatingResponse so the content script
+    // can retry instead of permanently treating a failed request as "no data".
+    const pending = this.enqueue(videoId).finally(() => this.inFlight.delete(videoId));
 
     this.inFlight.set(videoId, pending);
     return pending;
@@ -175,6 +171,7 @@ export class RatingService {
         method: 'GET',
         headers: { Accept: 'application/json' },
         cache: 'no-store',
+        credentials: 'omit',
         signal: controller.signal,
       });
 
@@ -188,9 +185,16 @@ export class RatingService {
       }
 
       if (response.status === 404) return null;
-      if (!response.ok) throw new Error(`HTTP_${response.status}`);
+      if (!response.ok) throw new Error(`RYD_HTTP_${response.status}`);
 
-      return normalizeRydResponse(videoId, await response.json());
+      const data = normalizeRydResponse(videoId, await response.json());
+      if (!data) throw new Error('RYD_INVALID_RESPONSE');
+      return data;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('RYD_TIMEOUT');
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
