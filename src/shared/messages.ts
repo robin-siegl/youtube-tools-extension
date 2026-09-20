@@ -19,6 +19,7 @@ export type RatingResponse =
 
 export function isRatingRequest(value: unknown): value is RatingRequest {
   if (!value || typeof value !== 'object') return false;
+
   const record = value as Record<string, unknown>;
   return record.type === 'YTTOOLS_GET_RATING' && typeof record.videoId === 'string';
 }
