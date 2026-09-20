@@ -1,0 +1,180 @@
+name: Promote & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+concurrency:
+  group: youtube-tools-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Validate, promote, tag, and release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout development
+        uses: actions/checkout@v4
+        with:
+          ref: development
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify source branch
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin development --tags
+
+          BASE_SHA="$(git rev-parse HEAD)"
+          REMOTE_DEVELOPMENT_SHA="$(git rev-parse origin/development)"
+
+          if [[ "$BASE_SHA" != "$REMOTE_DEVELOPMENT_SHA" ]]; then
+            echo "development changed after checkout. Run the workflow again."
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+            git fetch origin main
+            git merge-base --is-ancestor origin/main HEAD || {
+              echo "main contains commits that are not in development. Merge main back into development first."
+              exit 1
+            }
+          fi
+
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Validate source
+        run: npm run check
+
+      - name: Bump version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm version "${{ inputs.bump }}" --no-git-tag-version
+
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build release package
+        run: npm run package
+
+      - name: Verify branches did not change during release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin development
+
+          if [[ "$(git rev-parse origin/development)" != "${{ steps.source.outputs.base_sha }}" ]]; then
+            echo "development changed while the release was being prepared. Nothing was published. Run the workflow again."
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+            git fetch origin main
+            git merge-base --is-ancestor origin/main "${{ steps.source.outputs.base_sha }}" || {
+              echo "main changed and can no longer be fast-forwarded from development. Nothing was published."
+              exit 1
+            }
+          fi
+
+      - name: Commit release version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json package-lock.json
+          git commit -m "chore(release): ${{ steps.version.outputs.tag }}"
+
+      - name: Promote development to main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Update the integration branch with the release-version commit first.
+          git push origin HEAD:development
+
+          # Create main on the first release, otherwise this is a fast-forward only.
+          git push origin HEAD:main
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.version.outputs.tag }}"
+          git tag -a "$TAG" -m "YouTube Tools $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.version.outputs.tag }}"
+          gh release create "$TAG" release/*.zip \
+            --verify-tag \
+            --generate-notes \
+            --title "YouTube Tools $TAG"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-tools-${{ steps.version.outputs.version }}
+          path: release/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Release summary
+        shell: bash
+        run: |
+          {
+            echo "## YouTube Tools ${{ steps.version.outputs.tag }}"
+            echo
+            echo "- development promoted to main"
+            echo "- tag created: ${{ steps.version.outputs.tag }}"
+            echo "- GitHub Release created"
+            echo "- asset: youtube-tools-${{ steps.version.outputs.version }}.zip"
+          } >> "$GITHUB_STEP_SUMMARY"
