@@ -23,11 +23,22 @@ const MENU_BUTTON_SELECTORS = [
   'button[aria-label="Aktionen"]',
 ];
 
+const DURATION_BADGE_SELECTORS = [
+  'yt-thumbnail-overlay-badge-view-model .yt-badge-shape',
+  'yt-thumbnail-overlay-badge-view-model .badge-shape-wiz',
+  '.ytThumbnailOverlayBadgeViewModelHost .yt-badge-shape',
+  '.ytThumbnailOverlayBadgeViewModelHost .badge-shape-wiz',
+  'ytd-thumbnail-overlay-time-status-renderer',
+  '#time-status',
+];
+
 const VIDEO_LINK_SELECTOR = [
   'a[href*="/watch?v="]',
   'a[href^="/shorts/"]',
   'a[href*="youtube.com/shorts/"]',
 ].join(',');
+
+const DURATION_TEXT_PATTERN = /^\s*(?:\d+:)?\d{1,2}:\d{2}\s*$/;
 
 export function getVideoCards(): HTMLElement[] {
   const cards = new Set<HTMLElement>();
@@ -58,6 +69,43 @@ export function findThumbnailTarget(card: HTMLElement): HTMLElement {
   }
 
   return card;
+}
+
+export function findDurationBadge(card: HTMLElement): HTMLElement | null {
+  for (const selector of DURATION_BADGE_SELECTORS) {
+    for (const element of card.querySelectorAll<HTMLElement>(selector)) {
+      if (!DURATION_TEXT_PATTERN.test(element.textContent ?? '')) continue;
+
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return element;
+    }
+  }
+
+  const thumbnail = findThumbnailTarget(card);
+  for (const element of thumbnail.querySelectorAll<HTMLElement>('span, div')) {
+    if (!DURATION_TEXT_PATTERN.test(element.textContent ?? '')) continue;
+
+    let candidate: HTMLElement = element;
+    const parent = element.parentElement;
+    if (parent) {
+      const parentRect = parent.getBoundingClientRect();
+      if (
+        parentRect.width > 0 &&
+        parentRect.width <= 120 &&
+        parentRect.height > 0 &&
+        parentRect.height <= 40
+      ) {
+        candidate = parent;
+      }
+    }
+
+    const rect = candidate.getBoundingClientRect();
+    if (rect.width > 0 && rect.width <= 120 && rect.height > 0 && rect.height <= 40) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 export function getVideoId(card: Element): string | null {
