@@ -14,8 +14,7 @@ export interface RatingRequest {
 }
 
 export type RatingResponse =
-  | { ok: true; data: VideoRating | null }
-  | { ok: false; data: null; error: string };
+  { ok: true; data: VideoRating | null } | { ok: false; data: null; error: string };
 
 export function isRatingRequest(value: unknown): value is RatingRequest {
   if (!value || typeof value !== 'object') return false;

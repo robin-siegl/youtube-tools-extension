@@ -167,16 +167,13 @@ export class RatingService {
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(
-        `${RYD_BASE_URL}/votes?videoId=${encodeURIComponent(videoId)}`,
-        {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-          cache: 'no-store',
-          credentials: 'omit',
-          signal: controller.signal,
-        },
-      );
+      const response = await fetch(`${RYD_BASE_URL}/votes?videoId=${encodeURIComponent(videoId)}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        credentials: 'omit',
+        signal: controller.signal,
+      });
 
       if (response.status === 429) {
         const retryAfterSeconds = Number(response.headers.get('Retry-After'));
@@ -221,8 +218,7 @@ export function normalizeRydResponse(videoId: string, payload: unknown): VideoRa
     likes: Math.max(0, Math.round(likes)),
     dislikes: Math.max(0, Math.round(dislikes)),
     viewCount: Number.isFinite(viewCount) ? Math.max(0, Math.round(viewCount)) : null,
-    approvalPercent:
-      approvalPercent === null ? null : Math.max(0, Math.min(100, approvalPercent)),
+    approvalPercent: approvalPercent === null ? null : Math.max(0, Math.min(100, approvalPercent)),
     deleted: Boolean(record.deleted),
     source: 'return-youtube-dislike',
   };

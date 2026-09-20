@@ -225,11 +225,7 @@ export class RatingsFeature implements ContentFeature {
     }
   }
 
-  private positionForCard(
-    context: FeatureContext,
-    card: HTMLElement,
-    badge: HTMLDivElement,
-  ): void {
+  private positionForCard(context: FeatureContext, card: HTMLElement, badge: HTMLDivElement): void {
     if (
       !context.settings.showRatings ||
       card.classList.contains(HIDDEN_SHORTS_CLASS) ||
