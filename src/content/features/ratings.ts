@@ -8,11 +8,15 @@ import type { ContentFeature, FeatureContext } from '../feature';
 const THUMB_UP_PATH =
   'M2 21h4V9H2v12Zm20-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L13.17 1 6.59 7.59C6.22 7.95 6 8.45 6 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2Z';
 const THUMB_DOWN_PATH = RECOMMENDATION_ACTIONS.notInterested.iconPath;
+const RETRY_DELAY_MS = 15_000;
 
 export class RatingsFeature implements ContentFeature {
   readonly id = 'ratings';
   private readonly badgesByCard = new Map<HTMLElement, HTMLDivElement>();
   private requestedVideoByCard = new WeakMap<HTMLElement, string>();
+  private retryAfterByVideoId = new Map<string, number>();
+  private observedTargetByCard = new Map<HTMLElement, HTMLElement>();
+  private cardByObservedTarget = new WeakMap<HTMLElement, HTMLElement>();
   private observer: IntersectionObserver | null = null;
   private context: FeatureContext | null = null;
 
@@ -22,7 +26,11 @@ export class RatingsFeature implements ContentFeature {
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting || !(entry.target instanceof HTMLElement)) continue;
-          void this.loadRating(entry.target);
+
+          const card = this.cardByObservedTarget.get(entry.target);
+          if (!card) continue;
+
+          void this.loadRating(card);
         }
       },
       { root: null, rootMargin: '500px 0px', threshold: 0.01 },
@@ -37,7 +45,7 @@ export class RatingsFeature implements ContentFeature {
       return;
     }
 
-    for (const card of cards) this.observer?.observe(card);
+    for (const card of cards) this.observeCard(card);
   }
 
   position(context: FeatureContext): void {
@@ -62,6 +70,19 @@ export class RatingsFeature implements ContentFeature {
     this.context = null;
   }
 
+  private observeCard(card: HTMLElement): void {
+    const target = findThumbnailTarget(card);
+    const currentTarget = this.observedTargetByCard.get(card);
+
+    if (currentTarget === target && target.isConnected) return;
+
+    if (currentTarget) this.observer?.unobserve(currentTarget);
+
+    this.observedTargetByCard.set(card, target);
+    this.cardByObservedTarget.set(target, card);
+    this.observer?.observe(target);
+  }
+
   private async loadRating(card: HTMLElement): Promise<void> {
     const context = this.context;
     if (!context?.settings.showRatings || !card.isConnected) return;
@@ -69,6 +90,10 @@ export class RatingsFeature implements ContentFeature {
 
     const videoId = getVideoId(card);
     if (!videoId) return;
+
+    const retryAfter = this.retryAfterByVideoId.get(videoId) ?? 0;
+    if (retryAfter > Date.now()) return;
+
     if (this.requestedVideoByCard.get(card) === videoId) return;
     this.requestedVideoByCard.set(card, videoId);
 
@@ -88,10 +113,18 @@ export class RatingsFeature implements ContentFeature {
       return;
     }
 
-    if (rating) {
-      this.renderBadge(badge, rating);
-      context.schedulePosition();
+    if (!rating) {
+      // A transient service-worker/API failure must not permanently poison this
+      // card. Allow it to retry on a later scan instead of marking the video as
+      // loaded forever.
+      this.requestedVideoByCard.delete(card);
+      this.retryAfterByVideoId.set(videoId, Date.now() + RETRY_DELAY_MS);
+      return;
     }
+
+    this.retryAfterByVideoId.delete(videoId);
+    this.renderBadge(badge, rating);
+    context.schedulePosition();
   }
 
   private createBadge(): HTMLDivElement {
@@ -159,8 +192,19 @@ export class RatingsFeature implements ContentFeature {
 
     try {
       const response = (await chrome.runtime.sendMessage(request)) as RatingResponse | undefined;
-      return response?.ok ? response.data : null;
-    } catch {
+      if (!response) {
+        console.warn('[YouTube Tools] Rating service returned no response.', videoId);
+        return null;
+      }
+
+      if (!response.ok) {
+        console.warn('[YouTube Tools] Rating lookup failed.', videoId, response.error);
+        return null;
+      }
+
+      return response.data;
+    } catch (error) {
+      console.warn('[YouTube Tools] Could not contact rating service.', videoId, error);
       return null;
     }
   }
@@ -210,9 +254,19 @@ export class RatingsFeature implements ContentFeature {
   private cleanup(): void {
     for (const [card, badge] of this.badgesByCard) {
       if (card.isConnected && badge.isConnected) continue;
-      this.observer?.unobserve(card);
+
+      const target = this.observedTargetByCard.get(card);
+      if (target) this.observer?.unobserve(target);
+
       badge.remove();
       this.badgesByCard.delete(card);
+      this.observedTargetByCard.delete(card);
+    }
+
+    for (const [card, target] of this.observedTargetByCard) {
+      if (card.isConnected && target.isConnected) continue;
+      this.observer?.unobserve(target);
+      this.observedTargetByCard.delete(card);
     }
   }
 
@@ -220,6 +274,9 @@ export class RatingsFeature implements ContentFeature {
     this.observer?.disconnect();
     for (const badge of this.badgesByCard.values()) badge.remove();
     this.badgesByCard.clear();
+    this.observedTargetByCard.clear();
+    this.cardByObservedTarget = new WeakMap();
     this.requestedVideoByCard = new WeakMap();
+    this.retryAfterByVideoId.clear();
   }
 }
