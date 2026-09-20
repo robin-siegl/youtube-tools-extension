@@ -178,7 +178,8 @@ export class RatingsFeature implements ContentFeature {
     likeValue.textContent = this.compactNumber(rating.likes);
     dislikeValue.textContent = this.compactNumber(rating.dislikes);
 
-    const detailedApproval = approval === null ? 'ratio unavailable' : `${approval.toFixed(1)}% positive`;
+    const detailedApproval =
+      approval === null ? 'ratio unavailable' : `${approval.toFixed(1)}% positive`;
     badge.setAttribute(
       'aria-label',
       `${this.compactNumber(rating.likes)} likes, ${this.compactNumber(
