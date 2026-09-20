@@ -167,13 +167,16 @@ export class RatingService {
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(`${RYD_BASE_URL}/votes?videoId=${encodeURIComponent(videoId)}`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        cache: 'no-store',
-        credentials: 'omit',
-        signal: controller.signal,
-      });
+      const response = await fetch(
+        `${RYD_BASE_URL}/votes?videoId=${encodeURIComponent(videoId)}`,
+        {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+          credentials: 'omit',
+          signal: controller.signal,
+        },
+      );
 
       if (response.status === 429) {
         const retryAfterSeconds = Number(response.headers.get('Retry-After'));
