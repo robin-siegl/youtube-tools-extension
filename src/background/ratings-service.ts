@@ -192,7 +192,7 @@ export class RatingService {
       return data;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new Error('RYD_TIMEOUT');
+        throw new Error('RYD_TIMEOUT', { cause: error });
       }
       throw error;
     } finally {
