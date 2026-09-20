@@ -18,16 +18,19 @@ export class ContentRuntime {
 
   constructor(features: ContentFeature[]) {
     this.features = features;
-    const owner = this;
+
+    const getSettings = (): Settings => this.settings;
+    const getOverlay = (): OverlayHost => this.overlay;
+
     this.context = {
       get settings() {
-        return owner.settings;
+        return getSettings();
       },
       get overlay() {
-        return owner.overlay;
+        return getOverlay();
       },
-      scheduleScan: (delay = 70) => owner.scheduleScan(delay),
-      schedulePosition: () => owner.schedulePosition(),
+      scheduleScan: (delay = 70) => this.scheduleScan(delay),
+      schedulePosition: () => this.schedulePosition(),
     };
   }
 
@@ -157,4 +160,3 @@ export class ContentRuntime {
     if (!document.hidden) this.scheduleScan(0);
   };
 }
-
