@@ -67,7 +67,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Format check
+      - name: Format source
+        run: npm run format
+
+      - name: Verify formatting
         run: npm run format:check
 
       - name: Validate source
@@ -115,7 +118,7 @@ jobs:
             }
           fi
 
-      - name: Commit release version
+      - name: Commit release version and formatting
         shell: bash
         run: |
           set -euo pipefail
@@ -123,7 +126,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add package.json package-lock.json
+          git add -A
           git commit -m "chore(release): ${{ steps.version.outputs.tag }}"
 
       - name: Promote development to main
@@ -170,6 +173,7 @@ jobs:
           {
             echo "## YouTube Tools ${{ steps.version.outputs.tag }}"
             echo
+            echo "- source formatted and validated"
             echo "- development promoted to main"
             echo "- tag created: ${{ steps.version.outputs.tag }}"
             echo "- GitHub Release created"
