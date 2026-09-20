@@ -1,5 +1,6 @@
 import { createSvgIcon } from '../../shared/dom';
 import { findMenuButton, findThumbnailTarget } from '../../youtube/cards';
+import { isPlaylistCard } from '../../youtube/card-kind';
 import {
   FeedbackActions,
   RECOMMENDATION_ACTIONS,
@@ -23,10 +24,15 @@ export class RecommendationControlsFeature implements ContentFeature {
 
     for (const card of cards) {
       const existing = this.controlsByCard.get(card);
-      if (existing?.isConnected) continue;
+      const playlist = isPlaylistCard(card);
+
+      if (existing?.isConnected) {
+        this.syncAvailableActions(context, card, existing, playlist);
+        continue;
+      }
       if (!findMenuButton(card)) continue;
 
-      const controls = this.createActionGroup(context, card);
+      const controls = this.createActionGroup(context, card, playlist);
       context.overlay.append(controls);
       this.controlsByCard.set(card, controls);
       this.resizeObserver?.observe(card);
@@ -50,15 +56,40 @@ export class RecommendationControlsFeature implements ContentFeature {
     this.resizeObserver = null;
   }
 
-  private createActionGroup(context: FeatureContext, card: HTMLElement): HTMLDivElement {
+  private createActionGroup(
+    context: FeatureContext,
+    card: HTMLElement,
+    playlist: boolean,
+  ): HTMLDivElement {
     const wrapper = document.createElement('div');
     wrapper.className = `${EXTENSION_PREFIX}-actions`;
     wrapper.dataset.ytfcControls = 'true';
     wrapper.setAttribute('aria-label', 'Recommendation controls');
 
     wrapper.appendChild(this.createActionButton(context, card, 'notInterested'));
-    wrapper.appendChild(this.createActionButton(context, card, 'dontRecommend'));
+    if (!playlist) {
+      wrapper.appendChild(this.createActionButton(context, card, 'dontRecommend'));
+    }
+
     return wrapper;
+  }
+
+  private syncAvailableActions(
+    context: FeatureContext,
+    card: HTMLElement,
+    wrapper: HTMLDivElement,
+    playlist: boolean,
+  ): void {
+    const dontRecommend = wrapper.querySelector<HTMLButtonElement>('[data-action="dontRecommend"]');
+
+    if (playlist) {
+      dontRecommend?.remove();
+      return;
+    }
+
+    if (!dontRecommend) {
+      wrapper.appendChild(this.createActionButton(context, card, 'dontRecommend'));
+    }
   }
 
   private createActionButton(
