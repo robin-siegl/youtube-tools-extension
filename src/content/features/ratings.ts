@@ -1,6 +1,7 @@
 import { createSvgIcon } from '../../shared/dom';
 import type { RatingRequest, RatingResponse, VideoRating } from '../../shared/messages';
-import { findThumbnailTarget, getVideoId } from '../../youtube/cards';
+import { findDurationBadge, findThumbnailTarget, getVideoId } from '../../youtube/cards';
+import { isPlaylistCard } from '../../youtube/card-kind';
 import { RECOMMENDATION_ACTIONS } from '../../youtube/feedback';
 import { EXTENSION_PREFIX, HIDDEN_SHORTS_CLASS } from '../constants';
 import type { ContentFeature, FeatureContext } from '../feature';
@@ -45,7 +46,13 @@ export class RatingsFeature implements ContentFeature {
       return;
     }
 
-    for (const card of cards) this.observeCard(card);
+    for (const card of cards) {
+      if (isPlaylistCard(card)) {
+        this.removeCard(card);
+        continue;
+      }
+      this.observeCard(card);
+    }
   }
 
   position(context: FeatureContext): void {
@@ -86,7 +93,7 @@ export class RatingsFeature implements ContentFeature {
   private async loadRating(card: HTMLElement): Promise<void> {
     const context = this.context;
     if (!context?.settings.showRatings || !card.isConnected) return;
-    if (card.classList.contains(HIDDEN_SHORTS_CLASS)) return;
+    if (card.classList.contains(HIDDEN_SHORTS_CLASS) || isPlaylistCard(card)) return;
 
     const videoId = getVideoId(card);
     if (!videoId) return;
@@ -114,9 +121,6 @@ export class RatingsFeature implements ContentFeature {
     }
 
     if (!rating) {
-      // A transient service-worker/API failure must not permanently poison this
-      // card. Allow it to retry on a later scan instead of marking the video as
-      // loaded forever.
       this.requestedVideoByCard.delete(card);
       this.retryAfterByVideoId.set(videoId, Date.now() + RETRY_DELAY_MS);
       return;
@@ -225,7 +229,11 @@ export class RatingsFeature implements ContentFeature {
     card: HTMLElement,
     badge: HTMLDivElement,
   ): void {
-    if (!context.settings.showRatings || card.classList.contains(HIDDEN_SHORTS_CLASS)) {
+    if (
+      !context.settings.showRatings ||
+      card.classList.contains(HIDDEN_SHORTS_CLASS) ||
+      isPlaylistCard(card)
+    ) {
       badge.hidden = true;
       return;
     }
@@ -235,32 +243,44 @@ export class RatingsFeature implements ContentFeature {
       return;
     }
 
-    const rect = findThumbnailTarget(card).getBoundingClientRect();
+    const thumbnailRect = findThumbnailTarget(card).getBoundingClientRect();
     const outsideViewport =
-      rect.width <= 0 ||
-      rect.height <= 0 ||
-      rect.bottom <= 0 ||
-      rect.right <= 0 ||
-      rect.top >= window.innerHeight ||
-      rect.left >= window.innerWidth;
+      thumbnailRect.width <= 0 ||
+      thumbnailRect.height <= 0 ||
+      thumbnailRect.bottom <= 0 ||
+      thumbnailRect.right <= 0 ||
+      thumbnailRect.top >= window.innerHeight ||
+      thumbnailRect.left >= window.innerWidth;
 
     badge.hidden = outsideViewport;
     if (outsideViewport) return;
 
-    badge.style.left = `${Math.round(rect.left + 8)}px`;
-    badge.style.top = `${Math.round(rect.bottom - badge.offsetHeight - 8)}px`;
+    badge.style.left = `${Math.round(thumbnailRect.left + 8)}px`;
+
+    const durationBadge = findDurationBadge(card);
+    if (durationBadge) {
+      const durationRect = durationBadge.getBoundingClientRect();
+      const centeredTop = durationRect.top + (durationRect.height - badge.offsetHeight) / 2;
+      badge.style.top = `${Math.round(centeredTop)}px`;
+    } else {
+      badge.style.top = `${Math.round(thumbnailRect.bottom - badge.offsetHeight - 10)}px`;
+    }
+  }
+
+  private removeCard(card: HTMLElement): void {
+    const target = this.observedTargetByCard.get(card);
+    if (target) this.observer?.unobserve(target);
+
+    this.observedTargetByCard.delete(card);
+    this.badgesByCard.get(card)?.remove();
+    this.badgesByCard.delete(card);
+    this.requestedVideoByCard.delete(card);
   }
 
   private cleanup(): void {
     for (const [card, badge] of this.badgesByCard) {
       if (card.isConnected && badge.isConnected) continue;
-
-      const target = this.observedTargetByCard.get(card);
-      if (target) this.observer?.unobserve(target);
-
-      badge.remove();
-      this.badgesByCard.delete(card);
-      this.observedTargetByCard.delete(card);
+      this.removeCard(card);
     }
 
     for (const [card, target] of this.observedTargetByCard) {
