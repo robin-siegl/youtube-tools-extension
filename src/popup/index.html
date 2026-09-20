@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YouTube Tools</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <img class="header__icon" src="/icons/icon48.png" alt="" />
+        <div class="header__copy">
+          <div class="header__title-row">
+            <h1>YouTube Tools</h1>
+            <span id="version" class="version"></span>
+          </div>
+          <p>Make your feed easier to control.</p>
+        </div>
+      </header>
+
+      <section class="settings" aria-label="YouTube Tools settings">
+        <label class="setting-row" for="showRatings">
+          <span class="setting-row__copy">
+            <span class="setting-row__title">Video ratings</span>
+            <span class="setting-row__description">
+              Show likes, estimated dislikes, and the positive vote ratio.
+            </span>
+          </span>
+          <span class="switch">
+            <input id="showRatings" type="checkbox" />
+            <span class="switch__track" aria-hidden="true">
+              <span class="switch__thumb"></span>
+            </span>
+          </span>
+        </label>
+
+        <label class="setting-row" for="hideShorts">
+          <span class="setting-row__copy">
+            <span class="setting-row__title">Hide Shorts</span>
+            <span class="setting-row__description">
+              Remove Shorts cards and Shorts shelves from YouTube feeds.
+            </span>
+          </span>
+          <span class="switch">
+            <input id="hideShorts" type="checkbox" />
+            <span class="switch__track" aria-hidden="true">
+              <span class="switch__thumb"></span>
+            </span>
+          </span>
+        </label>
+
+        <div class="setting-block">
+          <label class="setting-row" for="dimWatched">
+            <span class="setting-row__copy">
+              <span class="setting-row__title">Dim watched videos</span>
+              <span class="setting-row__description">
+                Fade videos that are at least 90% watched instead of hiding them.
+              </span>
+            </span>
+            <span class="switch">
+              <input id="dimWatched" type="checkbox" />
+              <span class="switch__track" aria-hidden="true">
+                <span class="switch__thumb"></span>
+              </span>
+            </span>
+          </label>
+
+          <div id="opacityControl" class="opacity-control">
+            <div class="opacity-control__label">
+              <label for="watchedOpacity">Watched opacity</label>
+              <output id="opacityValue" for="watchedOpacity">35%</output>
+            </div>
+            <input
+              id="watchedOpacity"
+              class="slider"
+              type="range"
+              min="15"
+              max="80"
+              step="5"
+              value="35"
+            />
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>Dislike estimates by</span>
+        <a href="https://returnyoutubedislike.com" target="_blank" rel="noreferrer">
+          Return YouTube Dislike
+        </a>
+      </footer>
+    </main>
+
+    <script type="module" src="./index.ts"></script>
+  </body>
+</html>

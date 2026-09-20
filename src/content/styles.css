@@ -1,35 +1,28 @@
 /*
- * YouTube Feed Control
- * The controls are rendered in a body-level portal rather than inside YouTube's
- * video-card DOM. YouTube's hover preview is also rendered outside the card, so
- * this keeps our controls above it and prevents Polymer restamps from deleting
- * them when inline preview starts.
+ * Body-level overlays intentionally live outside YouTube's thumbnail/view-model
+ * subtree. YouTube replaces that subtree when inline previews start playing.
  */
-
 .ytfc-overlay-layer {
   position: fixed !important;
   inset: 0 !important;
-  z-index: 2147483647 !important;
+  z-index: 2147483646 !important;
   width: 100vw !important;
   height: 100vh !important;
   overflow: visible !important;
   pointer-events: none !important;
-  isolation: isolate !important;
+  contain: layout style;
 }
 
 .ytfc-actions {
   position: fixed !important;
   z-index: 2147483647 !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 4px !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  transform: none !important;
+  display: inline-flex !important;
+  gap: 6px !important;
   pointer-events: auto !important;
 }
 
-.ytfc-actions[hidden] {
+.ytfc-actions[hidden],
+.ytfc-rating[hidden] {
   display: none !important;
 }
 
@@ -47,9 +40,9 @@
   border: 0;
   border-radius: 8px;
   outline: none;
-  background: rgba(15, 15, 15, 0.82);
+  background: rgb(15 15 15 / 82%);
   color: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 28%);
   cursor: pointer;
   font: inherit;
   -webkit-tap-highlight-color: transparent;
@@ -60,7 +53,7 @@
 }
 
 .ytfc-action:hover {
-  background: rgba(15, 15, 15, 0.96);
+  background: rgb(15 15 15 / 96%);
 }
 
 .ytfc-action:active {
@@ -77,9 +70,9 @@
 }
 
 .ytfc-action__icon {
+  display: block;
   width: 19px;
   height: 19px;
-  display: block;
   fill: currentColor;
   pointer-events: none;
 }
@@ -89,14 +82,73 @@
 }
 
 .ytfc-action[aria-busy='true']::after {
-  content: '';
   position: absolute;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  border: 2px solid rgb(255 255 255 / 35%);
   border-top-color: #fff;
   border-radius: 50%;
+  content: '';
   animation: ytfc-spin 650ms linear infinite;
+}
+
+.ytfc-rating {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: rgb(15 15 15 / 82%);
+  color: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 28%);
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none !important;
+  backdrop-filter: blur(8px);
+}
+
+.ytfc-rating__ratio {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ytfc-rating__divider {
+  width: 1px;
+  height: 12px;
+  background: rgb(255 255 255 / 28%);
+}
+
+.ytfc-rating__metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.92;
+}
+
+.ytfc-rating__icon {
+  display: block;
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
+.ytfc-rating__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.ytfc-hidden-short {
+  display: none !important;
+}
+
+.ytfc-watched {
+  opacity: var(--ytfc-watched-opacity, 0.35) !important;
+  transition: opacity 140ms cubic-bezier(0.2, 0, 0, 1) !important;
 }
 
 .ytfc-toast {
@@ -109,7 +161,7 @@
   border-radius: 4px;
   background: #212121;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 28%);
   font-family: Roboto, Arial, sans-serif;
   font-size: 14px;
   font-weight: 400;
@@ -139,8 +191,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ytfc-action,
-  .ytfc-toast {
-    transition: none;
+  .ytfc-toast,
+  .ytfc-watched {
+    transition: none !important;
   }
 
   .ytfc-action[aria-busy='true']::after {

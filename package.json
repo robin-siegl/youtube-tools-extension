@@ -1,0 +1,38 @@
+{
+  "name": "youtube-tools-extension",
+  "version": "1.3.0",
+  "private": true,
+  "type": "module",
+  "description": "YouTube feed controls, ratings, Shorts filtering, watched-video dimming, and recommendation shortcuts.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "package": "npm run build && node scripts/package-extension.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "release:patch": "npm version patch",
+    "release:minor": "npm version minor",
+    "release:major": "npm version major"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "2.7.1",
+    "@eslint/js": "10.0.1",
+    "@types/chrome": "0.3.0",
+    "@types/node": "22.20.4",
+    "archiver": "7.0.1",
+    "eslint": "10.10.0",
+    "prettier": "3.9.8",
+    "typescript": "7.0.2",
+    "typescript-eslint": "8.70.0",
+    "vite": "8.2.2",
+    "vitest": "5.0.1",
+    "globals": "17.12.0"
+  }
+}

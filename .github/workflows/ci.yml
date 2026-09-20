@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: ['development', 'main']
+  pull_request:
+    branches: ['development', 'main']
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [[ -f package-lock.json ]]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package extension
+        run: node scripts/package-extension.mjs
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-tools-${{ github.sha }}
+          path: release/*.zip
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify release tag
+        run: node scripts/verify-release-version.mjs
+
+      - name: Verify tag belongs to main
+        shell: bash
+        run: |
+          git fetch origin main || {
+            echo "main branch does not exist yet. Create it before publishing tagged releases."
+            exit 1
+          }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "Release tags must point to a commit reachable from main."
+            exit 1
+          }
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [[ -f package-lock.json ]]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Validate
+        run: npm run check
+
+      - name: Package extension
+        run: node scripts/package-extension.mjs
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release/*.zip \
+            --verify-tag \
+            --generate-notes \
+            --title "YouTube Tools ${GITHUB_REF_NAME}"
